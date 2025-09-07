@@ -25,14 +25,14 @@ class Trainer:
         Initializes the trainer object with default values for the hyperparameters and data loaders.
         """
         parser = ArgumentParser()
-        parser.add_argument(
-            "--ver", default=1, help="google speech command set version 1 or 2", type=int
-        )
+        #parser.add_argument(
+        #    "--ver", default=1, help="google speech command set version 1 or 2", type=int
+        #)
         parser.add_argument(
             "--tau", default=1, help="model size", type=float, choices=[1, 1.5, 2, 3, 6, 8]
         )
         parser.add_argument("--gpu", default=0, help="gpu device id", type=int)
-        parser.add_argument("--download", help="download data", action="store_true")
+        #parser.add_argument("--download", help="download data", action="store_true")
         args = parser.parse_args()
         self.__dict__.update(vars(args))
         self.device = torch.device("cuda:%d" % self.gpu if torch.cuda.is_available() else "cpu")
@@ -46,9 +46,9 @@ class Trainer:
         Trains the model and presents the train/test progress.
         """
         # train hyperparameters
-        total_epoch = 200
+        total_epoch = 300
         warmup_epoch = 5
-        init_lr = 1e-1
+        init_lr = 5e-4
         lr_lower_limit = 0
 
         # optimizer
@@ -78,7 +78,7 @@ class Trainer:
                 inputs, labels = sample
                 inputs = inputs.to(self.device)
                 labels = labels.to(self.device)
-                inputs = self.preprocess_train(inputs, labels, augment=True)
+                inputs = self.preprocess_train(inputs, labels, augment=False)
                 outputs = self.model(inputs)
                 loss = F.cross_entropy(outputs, labels)
                 loss.backward()
@@ -86,15 +86,32 @@ class Trainer:
                 self.model.zero_grad()
 
             # valid
-            print("cur lr check ... %.4f" % lr)
+            print("cur lr check ... %.6f" % lr)
             with torch.no_grad():
                 self.model.eval()
-                valid_acc = self.Test(self.valid_dataset, self.valid_loader, augment=True)
-                print("valid acc: %.3f" % (valid_acc))
+                valid_acc = self.Test(self.valid_dataset, self.valid_loader, augment=False)
+                print("valid acc: %.4f" % (valid_acc))
 
         test_acc = self.Test(self.test_dataset, self.test_loader, augment=False)  # official testset
         print("test acc: %.3f" % (test_acc))
+        # --- Start of new model saving functionality ---
+        # Construct the dynamic filename using an f-string
+        model_filename = f"bcresnet-tau-{self.tau}.pth"
+    
+        # Define the directory where the model will be saved.
+        # It is a robust engineering practice to ensure the target directory exists.
+        save_dir = "saved_models"
+        os.makedirs(save_dir, exist_ok=True) # Create directory if it doesn't exist
+
+        # Combine the directory and filename to form the complete path
+        PATH = os.path.join(save_dir, model_filename)
+
+        # Save the model's state_dict, which contains the learned parameters
+        torch.save(self.model.state_dict(), PATH)
+        print(f"Model saved successfully to: {PATH}")
+        # --- End of new model saving functionality ---
         print("End.")
+
 
     def Test(self, dataset, loader, augment):
         """
@@ -126,41 +143,45 @@ class Trainer:
 
         Downloads and splits the data if necessary.
         """
-        print("Check google speech commands dataset v1 or v2 ...")
-        if not os.path.isdir("./data"):
-            os.mkdir("./data")
-        base_dir = "./data/speech_commands_v0.01"
-        url = "https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_v0.01.tar.gz"
-        url_test = "https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_test_set_v0.01.tar.gz"
-        if self.ver == 2:
-            base_dir = base_dir.replace("v0.01", "v0.02")
-            url = url.replace("v0.01", "v0.02")
-            url_test = url_test.replace("v0.01", "v0.02")
-        test_dir = base_dir.replace("commands", "commands_test_set")
-        if self.download:
-            old_dirs = glob(base_dir.replace("commands_", "commands_*"))
-            for old_dir in old_dirs:
-                shutil.rmtree(old_dir)
-            os.mkdir(test_dir)
-            DownloadDataset(test_dir, url_test)
-            os.mkdir(base_dir)
-            DownloadDataset(base_dir, url)
-            SplitDataset(base_dir)
-            print("Done...")
+        #print("Check google speech commands dataset v1 or v2 ...")
+        #if not os.path.isdir("./data"):
+            #os.mkdir("./data")
+        base_dir = "./data"
+        #url = "https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_v0.01.tar.gz"
+        #url_test = "https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_test_set_v0.01.tar.gz"
+        #if self.ver == 2:
+            #base_dir = base_dir.replace("v0.01", "v0.02")
+            #url = url.replace("v0.01", "v0.02")
+            #url_test = url_test.replace("v0.01", "v0.02")
+        #test_dir = base_dir.replace("commands", "commands_test_set")
+        #if self.download:
+            #old_dirs = glob(base_dir.replace("commands_", "commands_*"))
+            #for old_dir in old_dirs:
+                #shutil.rmtree(old_dir)
+            #os.mkdir(test_dir)
+            #DownloadDataset(test_dir, url_test)
+            #os.mkdir(base_dir)
+            #DownloadDataset(base_dir, url)
+            #SplitDataset(base_dir)
+        #print("Done...")
 
         # Define data loaders
-        train_dir = "%s/train_12class" % base_dir
-        valid_dir = "%s/valid_12class" % base_dir
+        train_dir = "%s/train" % base_dir
+        #print(train_dir)
+        valid_dir = "%s/valid" % base_dir
+        test_dir = "%s/test" % base_dir
         noise_dir = "%s/_background_noise_" % base_dir
+        #noise_dir = []
+
 
         transform = transforms.Compose([Padding()])
-        self.train_dataset = SpeechCommand(train_dir, self.ver, transform=transform)
+        self.train_dataset = SpeechCommand(train_dir, transform=transform)
         self.train_loader = DataLoader(
             self.train_dataset, batch_size=100, shuffle=True, num_workers=0, drop_last=False
         )
-        self.valid_dataset = SpeechCommand(valid_dir, self.ver, transform=transform)
+        self.valid_dataset = SpeechCommand(valid_dir, transform=transform)
         self.valid_loader = DataLoader(self.valid_dataset, batch_size=100, num_workers=0)
-        self.test_dataset = SpeechCommand(test_dir, self.ver, transform=transform)
+        self.test_dataset = SpeechCommand(test_dir, transform=transform)
         self.test_loader = DataLoader(self.test_dataset, batch_size=100, num_workers=0)
 
         print(
@@ -184,7 +205,7 @@ class Trainer:
         """
         Private method that loads the model into the object.
         """
-        print("model: BC-ResNet-%.1f on data v0.0%d" % (self.tau, self.ver))
+        print("model: BC-ResNet-%.1f" % (self.tau))
         self.model = BCResNets(int(self.tau * 8)).to(self.device)
 
 

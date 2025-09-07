@@ -16,52 +16,65 @@ from torch.utils.data import Dataset
 
 ### GSC
 label_dict = {
-    "_silence_": 0,
-    "_unknown_": 1,
-    "down": 2,
-    "go": 3,
-    "left": 4,
-    "no": 5,
-    "off": 6,
-    "on": 7,
-    "right": 8,
-    "stop": 9,
-    "up": 10,
-    "yes": 11,
+#    "_silence_": 0,
+#    "_unknown_": 1,
+#    "down": 2,
+#    "go": 3,
+#    "left": 4,
+#    "no": 5,
+#    "off": 6,
+#    "on": 7,
+#    "right": 8,
+#    "stop": 9,
+#    "up": 10,
+#    "yes": 11,
 }
-print("labels:\t", label_dict)
-sample_per_cls_v1 = [1854, 258, 257]
-sample_per_cls_v2 = [3077, 371, 408]
+#print("labels:\t", label_dict)
+#sample_per_cls_v1 = [1854, 258, 257]
+#sample_per_cls_v2 = [3077, 371, 408]
 SR = 16000
 
 
-def ScanAudioFiles(root_dir, ver):
-    sample_per_cls = sample_per_cls_v1 if ver == 1 else sample_per_cls_v2
+def ScanAudioFiles(root_dir):
+    #sample_per_cls = sample_per_cls_v1 
     audio_paths, labels = [], []
     for path, _, files in sorted(os.walk(root_dir, followlinks=True)):
         random.shuffle(files)
+        #print(path, root_dir)
         for idx, filename in enumerate(files):
             if not filename.endswith(".wav"):
                 continue
             dataset, class_name = path.split("/")[-2:]
-            if class_name in ("_unknown_", "_silence_"):  # balancing
-                if "train" in dataset and idx == sample_per_cls[0]:
-                    break
-                if "valid" in dataset and idx == sample_per_cls[1]:
-                    break
-                if "test" in dataset and idx == sample_per_cls[2]:
-                    break
+            #if class_name in ("_unknown_", "_silence_"):  # balancing
+                #if "train" in dataset and idx == sample_per_cls[0]:
+                    #break
+                #if "valid" in dataset and idx == sample_per_cls[1]:
+                    #break
+                #if "test" in dataset and idx == sample_per_cls[2]:
+                    #break
             audio_paths.append(os.path.join(path, filename))
+            if not class_name in label_dict:
+                label_dict.update({class_name: len(label_dict)})
             labels.append(label_dict[class_name])
+    #print("labels:\t", label_dict)
+    save_dir = "saved_models"
+    os.makedirs(save_dir, exist_ok=True) # Create directory if it doesn't exist
+
+    # Combine the directory and filename to form the complete path
+    PATH = os.path.join(save_dir, 'label_dict.txt')
+
+    # Save the model's state_dict, which contains the learned parameters
+    with open(PATH, 'w') as file:
+        file.write(str(label_dict))
     return audio_paths, labels
 
 
 class SpeechCommand(Dataset):
     """GSC"""
 
-    def __init__(self, root_dir, ver, transform=None):
+    def __init__(self, root_dir, transform=None):
         self.transform = transform
-        self.data_list, self.labels = ScanAudioFiles(root_dir, ver)
+        self.data_list, self.labels = ScanAudioFiles(root_dir)
 
     def __len__(self):
         return len(self.labels)
@@ -73,7 +86,7 @@ class SpeechCommand(Dataset):
             sample = self.transform(sample)
         label = self.labels[idx]
         return sample, label
-
+        
 
 def spec_augment(
     x, frequency_masking_para=20, time_masking_para=20, frequency_mask_num=2, time_mask_num=2
@@ -110,13 +123,14 @@ class Preprocess:
         frequency_mask_num=2,
         time_mask_num=2,
     ):
+        #noise_loc = None
         if noise_loc is None:
             self.background_noise = []
         else:
             self.background_noise = [
                 torchaudio.load(file_name)[0] for file_name in glob(noise_loc + "/*.wav")
             ]
-            assert len(self.background_noise) != 0
+            #assert len(self.background_noise) != 0
         self.feature = LogMel(
             device,
             sample_rate=sample_rate,
@@ -138,7 +152,7 @@ class Preprocess:
             )
             print("time specaug %d %d" % (self.time_mask_num, self.time_masking_para))
 
-    def __call__(self, x, labels, augment=True, noise_prob=0.8, is_train=True):
+    def __call__(self, x, labels, augment=False, noise_prob=0.8, is_train=True):
         assert len(x.shape) == 3
         if augment:
             for idx in range(x.shape[0]):
